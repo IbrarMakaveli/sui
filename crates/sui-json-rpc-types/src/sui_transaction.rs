@@ -66,6 +66,10 @@ impl Display for BigInt {
         write!(f, "{}", self.0)
     }
 }
+
+// similar to EpochId of sui-types but BigInt
+pub type SuiEpochId = BigInt;
+
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Default)]
 #[serde(rename_all = "camelCase", rename = "TransactionResponseQuery", default)]
 pub struct SuiTransactionResponseQuery {
@@ -301,7 +305,7 @@ impl SuiTransactionKind {
     fn try_from(tx: TransactionKind, module_cache: &impl GetModule) -> Result<Self, anyhow::Error> {
         Ok(match tx {
             TransactionKind::ChangeEpoch(e) => Self::ChangeEpoch(SuiChangeEpoch {
-                epoch: e.epoch,
+                epoch: e.epoch.into(),
                 storage_charge: e.storage_charge,
                 computation_charge: e.computation_charge,
                 storage_rebate: e.storage_rebate,
@@ -326,7 +330,7 @@ impl SuiTransactionKind {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 pub struct SuiChangeEpoch {
-    pub epoch: EpochId,
+    pub epoch: SuiEpochId,
     pub storage_charge: u64,
     pub computation_charge: u64,
     pub storage_rebate: u64,
@@ -358,7 +362,7 @@ pub trait SuiTransactionEffectsAPI {
     fn gas_object(&self) -> &OwnedObjectRef;
     fn events_digest(&self) -> Option<&TransactionEventsDigest>;
     fn dependencies(&self) -> &[TransactionDigest];
-    fn executed_epoch(&self) -> EpochId;
+    fn executed_epoch(&self) -> SuiEpochId;
     fn transaction_digest(&self) -> &TransactionDigest;
     fn gas_used(&self) -> &SuiGasCostSummary;
 
@@ -373,7 +377,7 @@ pub struct SuiTransactionEffectsV1 {
     /// The status of the execution
     pub status: SuiExecutionStatus,
     /// The epoch when this transaction was executed.
-    pub executed_epoch: EpochId,
+    pub executed_epoch: SuiEpochId,
     pub gas_used: SuiGasCostSummary,
     /// The object references of the shared objects used in this transaction. Empty if no shared objects were used.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -450,8 +454,8 @@ impl SuiTransactionEffectsAPI for SuiTransactionEffectsV1 {
         &self.dependencies
     }
 
-    fn executed_epoch(&self) -> EpochId {
-        self.executed_epoch
+    fn executed_epoch(&self) -> SuiEpochId {
+        self.executed_epoch.into()
     }
 
     fn transaction_digest(&self) -> &TransactionDigest {
@@ -484,7 +488,7 @@ impl TryFrom<TransactionEffects> for SuiTransactionEffects {
         match message_version {
             1 => Ok(SuiTransactionEffects::V1(SuiTransactionEffectsV1 {
                 status: effect.status().clone().into(),
-                executed_epoch: effect.executed_epoch(),
+                executed_epoch: effect.executed_epoch().into(),
                 gas_used: effect.gas_cost_summary().clone().into(),
                 shared_objects: to_sui_object_ref(effect.shared_objects().to_vec()),
                 transaction_digest: *effect.transaction_digest(),

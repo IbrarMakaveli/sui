@@ -480,7 +480,7 @@ impl RpcExampleProvider {
             digest: *tx_digest,
             effects: Some(SuiTransactionEffects::V1(SuiTransactionEffectsV1 {
                 status: SuiExecutionStatus::Success,
-                executed_epoch: 0,
+                executed_epoch: 0.into(),
                 gas_used: SuiGasCostSummary {
                     computation_cost: 100.into(),
                     storage_cost: 100.into(),
