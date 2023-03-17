@@ -482,9 +482,9 @@ impl RpcExampleProvider {
                 status: SuiExecutionStatus::Success,
                 executed_epoch: 0,
                 gas_used: SuiGasCostSummary {
-                    computation_cost: 100,
-                    storage_cost: 100,
-                    storage_rebate: 10,
+                    computation_cost: 100.into(),
+                    storage_cost: 100.into(),
+                    storage_rebate: 10.into(),
                 },
                 shared_objects: vec![],
                 transaction_digest: TransactionDigest::new(self.rng.gen()),

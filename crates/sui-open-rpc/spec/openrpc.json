@@ -235,9 +235,9 @@
                 },
                 "executedEpoch": 0,
                 "gasUsed": {
-                  "computationCost": 100,
-                  "storageCost": 100,
-                  "storageRebate": 10
+                  "computationCost": "100",
+                  "storageCost": "100",
+                  "storageRebate": "10"
                 },
                 "transactionDigest": "8UExPV121BEfWkbymSPDYhh23rVNh3MSWtC5juJ9JGMJ",
                 "mutated": [
@@ -1432,9 +1432,9 @@
                 },
                 "executedEpoch": 0,
                 "gasUsed": {
-                  "computationCost": 100,
-                  "storageCost": 100,
-                  "storageRebate": 10
+                  "computationCost": "100",
+                  "storageCost": "100",
+                  "storageRebate": "10"
                 },
                 "transactionDigest": "6AyFnAuKAKCqm1cD94EyGzBqJCDDJ716ojjmsKF2rqoi",
                 "mutated": [
@@ -3903,19 +3903,13 @@
         ],
         "properties": {
           "computationCost": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0.0
+            "$ref": "#/components/schemas/BigInt"
           },
           "storageCost": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0.0
+            "$ref": "#/components/schemas/BigInt"
           },
           "storageRebate": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0.0
+            "$ref": "#/components/schemas/BigInt"
           }
         }
       },
