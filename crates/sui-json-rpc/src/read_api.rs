@@ -26,7 +26,8 @@ use tracing::debug;
 use shared_crypto::intent::{AppId, Intent, IntentMessage, IntentScope, IntentVersion};
 use sui_core::authority::AuthorityState;
 use sui_json_rpc_types::{
-    BalanceChange, BigInt, Checkpoint, CheckpointId, CheckpointPage, DynamicFieldPage, MoveFunctionArgType,
+    BalanceChange, BigInt, Checkpoint, CheckpointId, CheckpointPage, SuiCheckpointSequenceNumber, 
+    DynamicFieldPage, MoveFunctionArgType,
     ObjectChange, ObjectValueKind, ObjectsPage, Page, SuiGetPastObjectRequest,
     SuiMoveNormalizedFunction, SuiMoveNormalizedModule, SuiMoveNormalizedStruct, SuiMoveStruct,
     SuiMoveValue, SuiObjectDataOptions, SuiObjectResponse, SuiObjectResponseQuery,
@@ -80,7 +81,7 @@ struct IntermediateTransactionResponse {
     transaction: Option<VerifiedTransaction>,
     effects: Option<TransactionEffects>,
     events: Option<SuiTransactionEvents>,
-    checkpoint_seq: Option<CheckpointSequenceNumber>,
+    checkpoint_seq: Option<SuiCheckpointSequenceNumber>,
     balance_changes: Option<Vec<BalanceChange>>,
     object_changes: Option<Vec<ObjectChange>>,
     timestamp: Option<CheckpointTimestamp>,
@@ -395,14 +396,14 @@ impl ReadApiServer for ReadApi {
             .get_transaction_checkpoint_sequence(&digest)
             .map_err(|e| anyhow!("{e}"))?
         {
-            temp_response.checkpoint_seq = Some(seq);
+            temp_response.checkpoint_seq = Some(seq.into());
         }
 
         if temp_response.checkpoint_seq.is_some() {
             let checkpoint = self
                 .state
                 // safe to unwrap because we have checked `is_some` above
-                .get_checkpoint_by_sequence_number(temp_response.checkpoint_seq.unwrap())
+                .get_checkpoint_by_sequence_number(temp_response.checkpoint_seq.unwrap().into())
                 .map_err(|e| anyhow!("{e}"))?;
             // TODO(chris): we don't need to fetch the whole checkpoint summary
             temp_response.timestamp = checkpoint.as_ref().map(|c| c.timestamp_ms);
@@ -524,12 +525,12 @@ impl ReadApiServer for ReadApi {
             .iter_mut()
             .zip(checkpoint_seq_list.into_iter())
         {
-            cache_entry.checkpoint_seq = seq.map(|(_, seq)| seq);
+            cache_entry.checkpoint_seq = seq.map(|(_, seq)| seq.into());
         }
 
         let unique_checkpoint_numbers = temp_response
             .values()
-            .filter_map(|cache_entry| cache_entry.checkpoint_seq)
+            .filter_map(|cache_entry| cache_entry.checkpoint_seq.map(<u64>::from))
             // It's likely that many transactions have the same checkpoint, so we don't
             // need to over-fetch
             .unique()
@@ -554,7 +555,13 @@ impl ReadApiServer for ReadApi {
             if cache_entry.checkpoint_seq.is_some() {
                 // safe to unwrap because is_some is checked
                 cache_entry.timestamp = *checkpoint_to_timestamp
-                    .get(cache_entry.checkpoint_seq.as_ref().unwrap())
+                    .get(
+                        cache_entry
+                            .checkpoint_seq
+                            .map(<u64>::from)
+                            .as_ref()
+                            .unwrap(),
+                    )
                     // Safe to unwrap because checkpoint_seq is guaranteed to exist in checkpoint_to_timestamp
                     .unwrap();
             }
@@ -825,13 +832,16 @@ impl ReadApiServer for ReadApi {
         })
     }
 
-    async fn get_latest_checkpoint_sequence_number(&self) -> RpcResult<CheckpointSequenceNumber> {
+    async fn get_latest_checkpoint_sequence_number(
+        &self,
+    ) -> RpcResult<SuiCheckpointSequenceNumber> {
         Ok(self
             .state
             .get_latest_checkpoint_sequence_number()
             .map_err(|e| {
                 anyhow!("Latest checkpoint sequence number was not found with error :{e}")
-            })?)
+            })?
+            .into())
     }
 
     async fn get_checkpoint(&self, id: CheckpointId) -> RpcResult<Checkpoint> {
@@ -1195,7 +1205,7 @@ fn convert_to_response(
         }
     }
 
-    response.checkpoint = cache.checkpoint_seq;
+    response.checkpoint = cache.checkpoint_seq.map(<u64>::from);
     response.timestamp_ms = cache.timestamp;
 
     if opts.show_events {
