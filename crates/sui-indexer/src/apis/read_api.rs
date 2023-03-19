@@ -13,6 +13,7 @@ use sui_json_rpc::api::{cap_page_limit, ReadApiClient, ReadApiServer};
 use sui_json_rpc::SuiRpcModule;
 use sui_json_rpc_types::{
     BigInt, Checkpoint, CheckpointId, CheckpointPage, DynamicFieldPage, MoveFunctionArgType, ObjectsPage,
+    SuiCheckpointSequenceNumber,
     Page, SuiGetPastObjectRequest, SuiMoveNormalizedFunction, SuiMoveNormalizedModule,
     SuiMoveNormalizedStruct, SuiObjectDataOptions, SuiObjectResponse, SuiObjectResponseQuery,
     SuiPastObjectResponse, SuiTransactionResponse, SuiTransactionResponseOptions,
@@ -291,7 +292,7 @@ where
     }
 
     async fn get_total_transaction_number(&self) -> RpcResult<BigInt> {
-        if self
+        if !self
             .migrated_methods
             .contains(&"get_total_transaction_number".to_string())
         {
@@ -436,7 +437,9 @@ where
             .await
     }
 
-    async fn get_latest_checkpoint_sequence_number(&self) -> RpcResult<CheckpointSequenceNumber> {
+    async fn get_latest_checkpoint_sequence_number(
+        &self,
+    ) -> RpcResult<SuiCheckpointSequenceNumber> {
         if !self
             .migrated_methods
             .contains(&"get_latest_checkpoint_sequence_number".to_string())
