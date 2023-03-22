@@ -5,4 +5,5 @@ This allows us to decouple from the complicated code in the original sui-system 
 We only need to update code here and in other mock versions when the core protocol changes. This includes:
 1. The genesis creation function interface
 2. advance_epoch and advance_epoch_safe_mode interface
-3. Any new information needed at epoch start.
+3. Any new system function call to the sui-system package required by protocol.
+4. Any new information needed at epoch start.
