@@ -557,6 +557,27 @@ mod sim_only_tests {
         wait_for_protocol_version(&test_cluster, START).await;
     }
 
+    #[sim_test]
+    async fn sui_system_state_upgrade_test() {
+        let test_cluster = TestClusterBuilder::new()
+            .with_epoch_duration_ms(20000)
+            .with_supported_protocol_versions(SupportedProtocolVersions::new_for_testing(
+                START, FINISH,
+            ))
+            .with_objects([sui_system_package_object("mock_sui_systems/base")])
+            .build()
+            .await
+            .unwrap();
+        sui_system_injection::set_override(sui_system_modules("mock_sui_systems/upgrade"));
+        // Wait for the upgrade to finish. After the upgrade, the new framework will be installed,
+        // but the system state object hasn't been upgraded yet.
+        wait_for_protocol_version(&test_cluster, FINISH).await;
+        // The system state object will be upgraded next time we execute advance_epoch transaction
+        // at epoch boundary.
+        wait_for_protocol_version(&test_cluster, FINISH).await;
+        // TODO: We should make epoch subscriber return the system state object, so that we can inspect it here.
+    }
+
     async fn wait_for_protocol_version(test_cluster: &TestCluster, version: u64) {
         let mut epoch_rx = test_cluster
             .fullnode_handle
