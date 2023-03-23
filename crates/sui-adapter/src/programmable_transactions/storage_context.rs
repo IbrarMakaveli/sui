@@ -1,7 +1,7 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-use std::{cell::RefCell, fmt, marker::PhantomData};
+use std::{cell::RefCell, collections::BTreeMap, fmt, marker::PhantomData};
 
 use crate::programmable_transactions::types::StorageView;
 
@@ -9,7 +9,7 @@ use sui_types::{
     base_types::ObjectID,
     error::SuiResult,
     error::{ExecutionError, ExecutionErrorKind},
-    move_package::MovePackage,
+    move_package::UpgradeInfo,
     object::Object,
     storage::{BackingPackageStore, ChildObjectResolver, LinkageInitializer},
 };
@@ -24,7 +24,7 @@ pub struct LinkageInfo {
     pub pkg_id: ObjectID,
     /// Move package may not always be available where linkage info is needed (e.g., when
     /// publishing)
-    pub running_pkg: Option<MovePackage>,
+    linkage_table: BTreeMap<ObjectID, UpgradeInfo>,
 }
 
 pub struct StorageContext<'a, E, S> {
@@ -50,19 +50,27 @@ impl<
         }
     }
 
-    pub fn set_context(&self, pkg_id: ObjectID) -> Result<(), ExecutionError> {
+    pub fn set_context(
+        &self,
+        pkg_id: ObjectID,
+        linkage_table: BTreeMap<ObjectID, UpgradeInfo>,
+    ) -> Result<(), ExecutionError> {
         if self.linkage_info.borrow().is_some() {
             return Err(ExecutionErrorKind::VMInvariantViolation.into());
         }
-        let (id, running_pkg) = match self.storage_view.get_packages(&[pkg_id]).unwrap() {
-            Ok(v) => (v[0].id(), Some(v[0].clone())),
-            Err(_) => (pkg_id, None),
-        };
         self.linkage_info.replace(Some(LinkageInfo {
-            pkg_id: id,
-            running_pkg,
+            pkg_id,
+            linkage_table,
         }));
         Ok(())
+    }
+
+    pub fn compute_context(&self, pkg_id: ObjectID) -> Result<(), ExecutionError> {
+        if self.linkage_info.borrow().is_some() {
+            return Err(ExecutionErrorKind::VMInvariantViolation.into());
+        }
+        let running_pkg = &self.storage_view.get_packages(&[pkg_id]).unwrap().unwrap()[0];
+        self.set_context(running_pkg.id(), running_pkg.linkage_table().clone())
     }
 
     pub fn reset_context(&self) {
@@ -78,7 +86,7 @@ impl<
         if old_id.is_some() {
             self.reset_context();
         }
-        _ = self.set_context(pkg_id); // cannot fail
+        _ = self.compute_context(pkg_id); // cannot fail
         old_id
     }
 }
@@ -118,34 +126,30 @@ impl<'a, E: fmt::Debug, S: StorageView<E>> LinkageResolver for StorageContext<'a
 
     fn relocate(&self, module_id: &ModuleId) -> Result<ModuleId, Self::Error> {
         let old_id: ObjectID = (*module_id.address()).into();
-        let new_module_id = match self
-            .linkage_info
-            .borrow()
-            .as_ref()
-            .unwrap()
-            .running_pkg
-            .as_ref()
-        {
-            Some(move_pkg) => {
-                if move_pkg.id() == old_id {
-                    // a linker may issue a query for a module in the package represented by the
-                    // link context, in which case the result is going to be the same module
-                    module_id.clone()
-                } else {
-                    let upgraded_id = move_pkg.linkage_table().get(&old_id).unwrap().upgraded_id;
-                    ModuleId::new(upgraded_id.into(), module_id.name().into())
-                }
-            }
-            None => module_id.clone(),
-        };
-        Ok(new_module_id)
+        let linkage_info_opt = self.linkage_info.borrow();
+        let linkage_info = linkage_info_opt.as_ref().unwrap();
+        if linkage_info.pkg_id == old_id {
+            // a linker may issue a query for a module in the package represented by the link
+            // context, in which case the result is going to be the same module
+            Ok(module_id.clone())
+        } else {
+            Ok(ModuleId::new(
+                linkage_info
+                    .linkage_table
+                    .get(&old_id)
+                    .unwrap()
+                    .upgraded_id
+                    .into(),
+                module_id.name().into(),
+            ))
+        }
     }
 }
 
 impl<'a, E: fmt::Debug, S: StorageView<E>> LinkageInitializer for StorageContext<'a, E, S> {
     /// Sets linkage contexts (makes it available to the linker)
-    fn set_context(&self, pkg_id: ObjectID) -> Result<(), ExecutionError> {
-        self.set_context(pkg_id)
+    fn compute_context(&self, pkg_id: ObjectID) -> Result<(), ExecutionError> {
+        self.compute_context(pkg_id)
     }
 
     /// Resets linkage contexts (makes it unavailable to the linker)

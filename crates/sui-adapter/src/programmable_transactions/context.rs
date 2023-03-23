@@ -600,7 +600,7 @@ where
                 .map_err(|e| convert_vm_error(e, vm, storage_context))?;
             let has_public_transfer = abilities.has_store();
             self.storage_context
-                .set_context((move_type_address(&move_type)).into())?;
+                .compute_context((move_type_address(&move_type)).into())?;
             let layout = tmp_session
                 .get_type_layout(&move_type.clone().into())
                 .map_err(|e| convert_vm_error(e, vm, storage_context))?;

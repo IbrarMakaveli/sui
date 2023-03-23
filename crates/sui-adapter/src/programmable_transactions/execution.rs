@@ -1,7 +1,10 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-use std::{collections::BTreeMap, fmt};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt,
+};
 
 use move_binary_format::{
     access::ModuleAccess,
@@ -38,8 +41,8 @@ use sui_types::{
         ProgrammableTransaction,
     },
     move_package::{
-        is_valid_package_upgrade_policy, normalize_deserialized_modules, MovePackage, UpgradeCap,
-        UpgradeReceipt, UpgradeTicket, UPGRADE_POLICY_COMPATIBLE,
+        build_linkage_table, is_valid_package_upgrade_policy, normalize_deserialized_modules,
+        MovePackage, UpgradeCap, UpgradeReceipt, UpgradeTicket, UPGRADE_POLICY_COMPATIBLE,
     },
     SUI_FRAMEWORK_ADDRESS,
 };
@@ -118,7 +121,9 @@ fn execute_command<E: fmt::Debug, S: StorageView<E>, Mode: ExecutionMode>(
                 );
             };
             if let TypeTag::Struct(s) = &tag {
-                context.storage_context.set_context((s.address).into())?;
+                context
+                    .storage_context
+                    .compute_context((s.address).into())?;
             }
             let elem_ty = context
                 .session
@@ -161,7 +166,9 @@ fn execute_command<E: fmt::Debug, S: StorageView<E>, Mode: ExecutionMode>(
                 }
             };
             if let TypeTag::Struct(s) = &tag {
-                context.storage_context.set_context((s.address).into())?;
+                context
+                    .storage_context
+                    .compute_context((s.address).into())?;
             }
             let elem_ty = context
                 .session
@@ -290,6 +297,7 @@ fn execute_command<E: fmt::Debug, S: StorageView<E>, Mode: ExecutionMode>(
                 type_arguments,
                 arguments,
                 /* is_init */ false,
+                /* set_context */ true,
             )?
         }
         Command::Publish(modules, dep_ids) => {
@@ -320,10 +328,13 @@ fn execute_move_call<E: fmt::Debug, S: StorageView<E>, Mode: ExecutionMode>(
     type_arguments: Vec<TypeTag>,
     arguments: Vec<Argument>,
     is_init: bool,
+    set_context: bool,
 ) -> Result<Vec<Value>, ExecutionError> {
-    context
-        .storage_context
-        .set_context((*module_id.address()).into())?;
+    if set_context {
+        context
+            .storage_context
+            .compute_context((*module_id.address()).into())?;
+    }
     // check that the function is either an entry function or a valid public function
     let LoadedFunctionInfo {
         kind,
@@ -375,7 +386,9 @@ fn execute_move_call<E: fmt::Debug, S: StorageView<E>, Mode: ExecutionMode>(
         "lost return value"
     );
 
-    context.storage_context.reset_context();
+    if set_context {
+        context.storage_context.reset_context();
+    }
     return_value_kinds
         .into_iter()
         .zip(return_values)
@@ -429,7 +442,36 @@ fn execute_move_publish<E: fmt::Debug, S: StorageView<E>, Mode: ExecutionMode>(
     context
         .gas_status
         .charge_publish_package(module_bytes.iter().map(|v| v.len()).sum())?;
-    let modules = publish_and_verify_new_modules::<_, _, Mode>(context, &module_bytes)?;
+    let dependencies = fetch_packages(context, &dep_ids)?;
+
+    let mut modules = deserialize_modules::<_, _, Mode>(context, &module_bytes)?;
+
+    // It should be fine that this does not go through ExecutionContext::fresh_id since the Move
+    // runtime does not to know about new packages created, since Move objects and Move packages
+    // cannot interact
+    let package_id = if Mode::packages_are_predefined() {
+        // do not calculate package id for genesis modules
+        (*modules[0].self_id().address()).into()
+    } else {
+        generate_package_id(&mut modules, context.tx_context)?
+    };
+
+    let mut immediate_dependencies = BTreeSet::new();
+    for module in &modules {
+        immediate_dependencies.extend(
+            module
+                .immediate_dependencies()
+                .into_iter()
+                .map(|dep| ObjectID::from(*dep.address())),
+        );
+    }
+    immediate_dependencies.remove(&package_id);
+    let linkage_table = build_linkage_table(immediate_dependencies, &dependencies)?;
+    context
+        .storage_context
+        .set_context(package_id, linkage_table)?;
+    let modules = publish_and_verify_modules(context, package_id, modules)?;
+
     let modules_to_init = modules
         .iter()
         .filter_map(|module| {
@@ -444,8 +486,6 @@ fn execute_move_publish<E: fmt::Debug, S: StorageView<E>, Mode: ExecutionMode>(
         })
         .collect::<Vec<_>>();
 
-    let dependencies = fetch_packages(context, &dep_ids)?;
-
     // new_package also initializes type origin table in the package object
     let package_id = context.new_package(modules, &dependencies, None)?;
     for module_id in &modules_to_init {
@@ -457,12 +497,15 @@ fn execute_move_publish<E: fmt::Debug, S: StorageView<E>, Mode: ExecutionMode>(
             vec![],
             vec![],
             /* is init */ true,
+            /* set_context */ false,
         )?;
         assert_invariant!(
             return_values.is_empty(),
             "init should not have return values"
         )
     }
+
+    context.storage_context.reset_context();
 
     let values = if Mode::packages_are_predefined() {
         // no upgrade cap for genesis modules
@@ -503,7 +546,7 @@ fn execute_move_upgrade<E: fmt::Debug, S: StorageView<E>, Mode: ExecutionMode>(
             context.by_value_arg(CommandKind::Upgrade, 0, upgrade_ticket_arg)?;
         context
             .storage_context
-            .set_context(UpgradeTicket::type_().address.into())?;
+            .compute_context(UpgradeTicket::type_().address.into())?;
         let ticket_type = context
             .session
             .load_type(&TypeTag::Struct(Box::new(UpgradeTicket::type_())))
@@ -547,13 +590,31 @@ fn execute_move_upgrade<E: fmt::Debug, S: StorageView<E>, Mode: ExecutionMode>(
     // Check that this package ID points to a package and get the package we're upgrading.
     let current_package = fetch_package(context, &upgrade_ticket.package.bytes)?;
 
+    // Read the package dependencies.
+    let dependencies = fetch_packages(context, &dep_ids)?;
+
     // Run the move + sui verifier on the modules and publish them into the cache.
-    // NB: this will substitute in the original package id for the `self` address in all of these modules.
-    let upgraded_package_modules = publish_and_verify_upgraded_modules::<_, _, Mode>(
-        context,
-        &module_bytes,
-        current_package.original_package_id(),
-    )?;
+    let package_id = current_package.original_package_id();
+    let mut modules = deserialize_modules::<_, _, Mode>(context, &module_bytes)?;
+    // substitute in the original package id for the `self` address in all of these modules.
+    substitute_package_id(&mut modules, package_id)?;
+
+    let mut immediate_dependencies = BTreeSet::new();
+    for module in &modules {
+        immediate_dependencies.extend(
+            module
+                .immediate_dependencies()
+                .into_iter()
+                .map(|dep| ObjectID::from(*dep.address())),
+        );
+    }
+    immediate_dependencies.remove(&package_id);
+    let linkage_table = build_linkage_table(immediate_dependencies, &dependencies)?;
+    context
+        .storage_context
+        .set_context(package_id, linkage_table)?;
+
+    let upgraded_package_modules = publish_and_verify_modules(context, package_id, modules)?;
 
     // Full backwards compatibility except that we allow friend function signatures to change.
     check_compatibility(
@@ -562,18 +623,9 @@ fn execute_move_upgrade<E: fmt::Debug, S: StorageView<E>, Mode: ExecutionMode>(
         upgrade_ticket.policy,
     )?;
 
-    // Read the package dependencies.
-    let dependency_packages = fetch_packages(context, &dep_ids)?;
+    let upgraded_object_id =
+        context.upgrade_package(&current_package, upgraded_package_modules, &dependencies)?;
 
-    let upgraded_object_id = context.upgrade_package(
-        &current_package,
-        upgraded_package_modules,
-        &dependency_packages,
-    )?;
-
-    context
-        .storage_context
-        .set_context(UpgradeTicket::type_().address.into())?;
     let upgrade_receipt_type = context
         .session
         .load_type(&TypeTag::Struct(Box::new(UpgradeReceipt::type_())))
@@ -767,37 +819,6 @@ fn deserialize_modules<E: fmt::Debug, S: StorageView<E>, Mode: ExecutionMode>(
     Ok(modules)
 }
 
-/// - Deserializes the modules
-/// - Publishes them into the VM, which invokes the Move verifier
-/// - Run the Sui Verifier
-fn publish_and_verify_new_modules<E: fmt::Debug, S: StorageView<E>, Mode: ExecutionMode>(
-    context: &mut ExecutionContext<E, S>,
-    module_bytes: &[Vec<u8>],
-) -> Result<Vec<CompiledModule>, ExecutionError> {
-    let mut modules = deserialize_modules::<_, _, Mode>(context, module_bytes)?;
-
-    // It should be fine that this does not go through ExecutionContext::fresh_id since the Move
-    // runtime does not to know about new packages created, since Move objects and Move packages
-    // cannot interact
-    let package_id = if Mode::packages_are_predefined() {
-        // do not calculate package id for genesis modules
-        (*modules[0].self_id().address()).into()
-    } else {
-        generate_package_id(&mut modules, context.tx_context)?
-    };
-    publish_and_verify_modules(context, package_id, modules)
-}
-
-fn publish_and_verify_upgraded_modules<E: fmt::Debug, S: StorageView<E>, Mode: ExecutionMode>(
-    context: &mut ExecutionContext<E, S>,
-    module_bytes: &[Vec<u8>],
-    package_id: ObjectID,
-) -> Result<Vec<CompiledModule>, ExecutionError> {
-    let mut modules = deserialize_modules::<_, _, Mode>(context, module_bytes)?;
-    substitute_package_id(&mut modules, package_id)?;
-    publish_and_verify_modules(context, package_id, modules)
-}
-
 fn publish_and_verify_modules<E: fmt::Debug, S: StorageView<E>>(
     context: &mut ExecutionContext<E, S>,
     package_id: ObjectID,
@@ -812,10 +833,7 @@ fn publish_and_verify_modules<E: fmt::Debug, S: StorageView<E>>(
             bytes
         })
         .collect();
-    // TODO: The VM needs linkage info when publishing but what context should we use? Fpr now we
-    // pass unpublished package ID but this means that the linkage info will not get fully
-    // initialized (as we can't retrieve MovePackage for this ID yet...)
-    context.storage_context.set_context(package_id)?;
+
     context
         .session
         .publish_module_bundle(
@@ -826,7 +844,6 @@ fn publish_and_verify_modules<E: fmt::Debug, S: StorageView<E>>(
             context.gas_status.create_move_gas_status(),
         )
         .map_err(|e| context.convert_vm_error(e))?;
-    context.storage_context.reset_context();
 
     // run the Sui verifier
     for module in &modules {
@@ -1267,7 +1284,7 @@ fn check_param_type<E: fmt::Debug, S: StorageView<E>, Mode: ExecutionMode>(
             if set_linkage {
                 context
                     .storage_context
-                    .set_context(obj.type_.address().into())?;
+                    .compute_context(obj.type_.address().into())?;
             }
             obj_ty = context
                 .session
