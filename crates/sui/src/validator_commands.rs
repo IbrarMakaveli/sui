@@ -251,7 +251,7 @@ impl SuiValidatorCommand {
                     },
                     proof_of_possession: pop,
                 };
-                // TODO set key files permisssion
+                // TODO set key files permission
                 let validator_info_file_name = dir.join("validator.info");
                 let validator_info_bytes = serde_yaml::to_vec(&validator_info)?;
                 fs::write(validator_info_file_name.clone(), validator_info_bytes)?;
@@ -397,7 +397,7 @@ async fn get_cap_object_ref(
             )
             .await?
             .object_ref_if_exists()
-            .ok_or_else(|| anyhow!("OperaionCap {} does not exist", operation_cap_id))?;
+            .ok_or_else(|| anyhow!("OperationCap {} does not exist", operation_cap_id))?;
         Ok::<(ValidatorStatus, SuiValidatorSummary, ObjectRef), anyhow::Error>((
             status,
             summary,
@@ -421,7 +421,7 @@ async fn get_cap_object_ref(
         let owner = resp.owner().unwrap();
         let cap_obj_ref = resp
             .object_ref_if_exists()
-            .unwrap_or_else(|| panic!("OperaionCap {} shall exist.", cap_object_id));
+            .unwrap_or_else(|| panic!("OperationCap {} shall exist.", cap_object_id));
         if owner != Owner::AddressOwner(context.active_address()?) {
             anyhow::bail!(
                 "OperationCap {} is not owned by the sender address {} but {:?}",
@@ -669,10 +669,14 @@ async fn get_validator_summary(
         Some(active_validators.remove(&validator_address).unwrap())
     } else {
         // Check panding validators
-        get_pending_candidate_summary(validator_address, client, pending_active_validators_id)
-            .await?
-            .map(|v| v.into_sui_validator_summary())
-            .tap_some(|_s| status = Some(ValidatorStatus::Pending))
+        get_pending_candidate_summary(
+            validator_address,
+            client,
+            pending_active_validators_id.bytes,
+        )
+        .await?
+        .map(|v| v.into_sui_validator_summary())
+        .tap_some(|_s| status = Some(ValidatorStatus::Pending))
 
         // TODO also check candidate and inactive valdiators
     };

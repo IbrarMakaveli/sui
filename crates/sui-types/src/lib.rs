@@ -134,3 +134,9 @@ impl MoveTypeTagTrait for u64 {
         TypeTag::U64
     }
 }
+
+impl MoveTypeTagTrait for ObjectID {
+    fn get_type_tag() -> TypeTag {
+        TypeTag::Address
+    }
+}

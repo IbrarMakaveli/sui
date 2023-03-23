@@ -24,7 +24,6 @@ use sui_types::crypto::{
     KeypairTraits, ToFromBytes,
 };
 use sui_types::gas::GasCostSummary;
-use sui_types::id::ID;
 use sui_types::message_envelope::Message;
 use sui_types::messages::{
     CallArg, CertifiedTransactionEffects, ObjectArg, TransactionData, TransactionEffectsAPI,
@@ -446,6 +445,7 @@ async fn test_inactive_validator_pool_read() {
             .find(|v| v.sui_address == address)
             .unwrap()
             .staking_pool_id
+            .bytes
     });
 
     let tx_data = TransactionData::new_move_call_with_dummy_gas_price(
@@ -483,8 +483,8 @@ async fn test_inactive_validator_pool_read() {
             .inactive_pools_id;
         let validator = get_validator_from_table(
             node.state().db().as_ref(),
-            inactive_pool_id,
-            &ID::new(staking_pool_id),
+            inactive_pool_id.bytes,
+            &staking_pool_id,
         )
         .unwrap();
         assert_eq!(validator.sui_address, address);

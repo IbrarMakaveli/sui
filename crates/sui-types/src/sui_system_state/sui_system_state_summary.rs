@@ -1,8 +1,9 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::base_types::{AuthorityName, ObjectID, SuiAddress};
+use crate::base_types::{AuthorityName, SuiAddress};
 use crate::committee::{Committee, CommitteeWithNetworkMetadata, NetworkMetadata};
+use crate::id::ID;
 use crate::multiaddr::Multiaddr;
 use fastcrypto::encoding::Base64;
 use fastcrypto::traits::ToFromBytes;
@@ -11,12 +12,10 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use std::collections::BTreeMap;
 
-use crate::id::ID;
-
 /// This is the JSON-RPC type for the SUI system state object.
 /// It flattens all fields to make them top-level fields such that it as minimum
 /// dependencies to the internal data structures of the SUI system state type.
-#[derive(Debug, Serialize, Deserialize, Clone, JsonSchema)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SuiSystemStateSummary {
     /// The current epoch ID, starting from 0.
@@ -90,22 +89,22 @@ pub struct SuiSystemStateSummary {
     /// The list of active validators in the current epoch.
     pub active_validators: Vec<SuiValidatorSummary>,
     /// ID of the object that contains the list of new validators that will join at the end of the epoch.
-    pub pending_active_validators_id: ObjectID,
+    pub pending_active_validators_id: ID,
     /// Number of new validators that will join at the end of the epoch.
     pub pending_active_validators_size: u64,
     /// Removal requests from the validators. Each element is an index
     /// pointing to `active_validators`.
     pub pending_removals: Vec<u64>,
     /// ID of the object that maps from staking pool's ID to the sui address of a validator.
-    pub staking_pool_mappings_id: ObjectID,
+    pub staking_pool_mappings_id: ID,
     /// Number of staking pool mappings.
     pub staking_pool_mappings_size: u64,
     /// ID of the object that maps from a staking pool ID to the inactive validator that has that pool as its staking pool.
-    pub inactive_pools_id: ObjectID,
+    pub inactive_pools_id: ID,
     /// Number of inactive staking pools.
     pub inactive_pools_size: u64,
     /// ID of the object that stores preactive validators, mapping their addresses to their `Validator` structs.
-    pub validator_candidates_id: ObjectID,
+    pub validator_candidates_id: ID,
     /// Number of preactive validators.
     pub validator_candidates_size: u64,
     /// Map storing the number of epochs for which each validator has been below the low stake threshold.
@@ -140,7 +139,7 @@ impl SuiSystemStateSummary {
 /// This is the JSON-RPC type for the SUI validator. It flattens all inner structures
 /// to top-level fields so that they are decoupled from the internal definitions.
 #[serde_as]
-#[derive(Debug, Serialize, Deserialize, Clone, JsonSchema)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SuiValidatorSummary {
     // Metadata
@@ -192,7 +191,7 @@ pub struct SuiValidatorSummary {
 
     // Staking pool information
     /// ID of the staking pool object.
-    pub staking_pool_id: ObjectID,
+    pub staking_pool_id: ID,
     /// The epoch at which this pool became active.
     pub staking_pool_activation_epoch: Option<u64>,
     /// The epoch at which this staking pool ceased to be active. `None` = {pre-active, active},
@@ -210,7 +209,7 @@ pub struct SuiValidatorSummary {
     /// Pending pool token withdrawn during the current epoch, emptied at epoch boundaries.
     pub pending_pool_token_withdraw: u64,
     /// ID of the exchange rate table object.
-    pub exchange_rates_id: ObjectID,
+    pub exchange_rates_id: ID,
     /// Number of exchange rates in the table.
     pub exchange_rates_size: u64,
 }

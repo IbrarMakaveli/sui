@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::balance::Balance;
-use crate::base_types::{EpochId, ObjectID, SuiAddress};
+use crate::base_types::{EpochId, SuiAddress};
 use crate::collection_types::{Bag, Table, TableVec, VecMap, VecSet};
 use crate::committee::{Committee, CommitteeWithNetworkMetadata, NetworkMetadata, ProtocolVersion};
 use crate::crypto::verify_proof_of_possession;
@@ -420,7 +420,7 @@ impl ValidatorV1 {
 /// Rust version of the Move sui::staking_pool::StakingPool type
 #[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
 pub struct StakingPoolV1 {
-    pub id: ObjectID,
+    pub id: ID,
     pub activation_epoch: Option<u64>,
     pub deactivation_epoch: Option<u64>,
     pub sui_balance: u64,
@@ -759,6 +759,6 @@ impl Default for SuiSystemStateInnerV1 {
 /// Rust version of the Move sui::validator_cap::UnverifiedValidatorOperationCap type
 #[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
 pub struct UnverifiedValidatorOperationCapV1 {
-    pub id: ObjectID,
+    pub id: ID,
     pub authorizer_validator_address: SuiAddress,
 }

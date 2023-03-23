@@ -18,7 +18,6 @@ use sui_types::committee::EpochId;
 use sui_types::dynamic_field::get_dynamic_field_from_store;
 use sui_types::error::SuiError;
 use sui_types::governance::StakedSui;
-use sui_types::id::ID;
 use sui_types::sui_system_state::sui_system_state_summary::SuiSystemStateSummary;
 use sui_types::sui_system_state::PoolTokenExchangeRate;
 use sui_types::sui_system_state::SuiSystemStateTrait;
@@ -150,8 +149,8 @@ impl GovernanceReadApi {
         pool_id: &ObjectID,
     ) -> Result<ObjectID, Error> {
         let active_rate = system_state.active_validators.iter().find_map(|v| {
-            if &v.staking_pool_id == pool_id {
-                Some(v.exchange_rates_id)
+            if &v.staking_pool_id.bytes == pool_id {
+                Some(v.exchange_rates_id.bytes)
             } else {
                 None
             }
@@ -163,11 +162,11 @@ impl GovernanceReadApi {
             // try find from inactive pool
             let validator = get_validator_from_table(
                 self.state.db().as_ref(),
-                system_state.inactive_pools_id,
-                &ID::new(*pool_id),
+                system_state.inactive_pools_id.bytes,
+                pool_id,
             )?;
 
-            Ok(validator.exchange_rates_id)
+            Ok(validator.exchange_rates_id.bytes)
         }
     }
 

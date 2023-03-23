@@ -31,6 +31,20 @@ pub struct ID {
     pub bytes: ObjectID,
 }
 
+impl Default for ID {
+    fn default() -> Self {
+        Self {
+            bytes: ObjectID::ZERO,
+        }
+    }
+}
+
+impl ToString for ID {
+    fn to_string(&self) -> String {
+        self.bytes.to_string()
+    }
+}
+
 impl UID {
     pub fn new(bytes: ObjectID) -> Self {
         Self {

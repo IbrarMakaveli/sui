@@ -3,8 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::base_types::{ObjectID, SuiAddress};
-use crate::id::UID;
+use crate::id::ID;
 
 /// Rust version of the Move sui::vec_map::VecMap type
 #[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
@@ -26,70 +25,30 @@ pub struct VecSet<T> {
 }
 
 /// Rust version of the Move sui::table::Table type.
-#[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone, Eq, PartialEq)]
 pub struct TableVec {
     pub contents: Table,
 }
 
-impl Default for TableVec {
-    fn default() -> Self {
-        TableVec {
-            contents: Table {
-                id: ObjectID::from(SuiAddress::ZERO),
-                size: 0,
-            },
-        }
-    }
-}
-
 /// Rust version of the Move sui::table::Table type.
-#[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone, Eq, PartialEq)]
 pub struct Table {
-    pub id: ObjectID,
+    pub id: ID,
     pub size: u64,
 }
 
-impl Default for Table {
-    fn default() -> Self {
-        Table {
-            id: ObjectID::from(SuiAddress::ZERO),
-            size: 0,
-        }
-    }
-}
-
 /// Rust version of the Move sui::linked_table::LinkedTable type.
-#[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone, Eq, PartialEq)]
 pub struct LinkedTable<K> {
-    pub id: ObjectID,
+    pub id: ID,
     pub size: u64,
     pub head: Option<K>,
     pub tail: Option<K>,
 }
 
-impl<K> Default for LinkedTable<K> {
-    fn default() -> Self {
-        LinkedTable {
-            id: ObjectID::from(SuiAddress::ZERO),
-            size: 0,
-            head: None,
-            tail: None,
-        }
-    }
-}
-
 /// Rust version of the Move sui::bag::Bag type.
-#[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone, Eq, PartialEq)]
 pub struct Bag {
-    pub id: UID,
+    pub id: ID,
     pub size: u64,
-}
-
-impl Default for Bag {
-    fn default() -> Self {
-        Self {
-            id: UID::new(ObjectID::ZERO),
-            size: 0,
-        }
-    }
 }

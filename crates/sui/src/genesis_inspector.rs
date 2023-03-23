@@ -96,7 +96,7 @@ pub(crate) fn examine_genesis_checkpoint(genesis: UnsignedGenesis) {
                     let validator = validator_address_map
                         .get(&staked_sui.validator_address())
                         .unwrap();
-                    assert_eq!(validator.staking_pool.id, staked_sui.pool_id());
+                    assert_eq!(validator.staking_pool.id.bytes, staked_sui.pool_id());
 
                     staked_sui_map.insert(object.id(), staked_sui);
                 } else {
@@ -301,7 +301,7 @@ fn display_validator(validator: &SuiValidatorGenesis) {
         validator.next_epoch_commission_rate
     );
     println!("Next Epoch Stake: {}", validator.next_epoch_stake);
-    println!("Staking Pool ID: {}", validator.staking_pool.id);
+    println!("Staking Pool ID: {}", validator.staking_pool.id.bytes);
     println!(
         "Staking Pool Activation Epoch: {:?}",
         validator.staking_pool.activation_epoch
@@ -336,7 +336,7 @@ fn display_validator(validator: &SuiValidatorGenesis) {
     );
     println!(
         "Exchange Rates ID: {}",
-        validator.staking_pool.exchange_rates.id
+        validator.staking_pool.exchange_rates.id.bytes
     );
     println!(
         "Exchange Rates Size: {}",
