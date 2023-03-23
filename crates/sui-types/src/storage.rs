@@ -6,7 +6,7 @@ use crate::committee::{Committee, EpochId};
 use crate::digests::{
     CheckpointContentsDigest, CheckpointDigest, TransactionEffectsDigest, TransactionEventsDigest,
 };
-use crate::error::SuiError;
+use crate::error::{ExecutionError, SuiError};
 use crate::message_envelope::Message;
 use crate::messages::{
     SenderSignedData, TransactionDataAPI, TransactionEffects, TransactionEvents,
@@ -25,7 +25,7 @@ use crate::{
 };
 use itertools::Itertools;
 use move_binary_format::CompiledModule;
-use move_core_types::{account_address::AccountAddress, language_storage::ModuleId};
+use move_core_types::language_storage::ModuleId;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use std::collections::{BTreeMap, HashMap};
@@ -94,7 +94,7 @@ pub trait BackingPackageStore {
         package_ids: &[ObjectID],
     ) -> SuiResult<PackageFetchResults<Object>> {
         let package_objects: Vec<Result<Object, ObjectID>> = package_ids
-            .into_iter()
+            .iter()
             .map(|id| match self.get_package_object(id) {
                 Ok(None) => Ok(Err(*id)),
                 Ok(Some(o)) => Ok(Ok(o)),
@@ -694,15 +694,10 @@ impl<T: ObjectStore> ObjectStore for Arc<T> {
     }
 }
 
-// TODO: this is going to be defined on the core Move side (much like other StorageView trates) and
-// is here only to facilitate easier development.
-pub trait LinkageResolver {
-    type Error: std::fmt::Debug;
+/// Initialize linkage information. The input is the ID of a package containing a function used as
+/// an entry point to programmable transaction's Move call command.
+pub trait LinkageInitializer {
+    fn set_context(&self, id: ObjectID) -> Result<(), ExecutionError>;
 
-    /// The link context identifies the mapping from runtime `ModuleId`s to the `ModuleId`s in
-    /// storage that they are loaded from as returned by `relocate`.
-    fn link_context(&self) -> AccountAddress;
-
-    /// Translate the runtime `module_id` to the on-chain `ModuleId` that it should be loaded from.
-    fn relocate(&self, module_id: &ModuleId) -> Result<ModuleId, Self::Error>;
+    fn reset_context(&self);
 }

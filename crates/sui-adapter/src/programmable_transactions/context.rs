@@ -164,6 +164,7 @@ where
     /// Create a new ID and update the state
     pub fn fresh_id(&mut self) -> Result<ObjectID, ExecutionError> {
         let object_id = self.tx_context.fresh_id();
+        // no need to set linkage context as session is only used to get native extensions
         let object_runtime: &mut ObjectRuntime = self.session.get_native_extensions().get_mut();
         object_runtime
             .new_id(object_id)
@@ -173,6 +174,7 @@ where
 
     /// Delete an ID and update the state
     pub fn delete_id(&mut self, object_id: ObjectID) -> Result<(), ExecutionError> {
+        // no need to set linkage context as session is only used to get native extensions
         let object_runtime: &mut ObjectRuntime = self.session.get_native_extensions().get_mut();
         object_runtime
             .delete_id(object_id)
@@ -187,6 +189,7 @@ where
         function: FunctionDefinitionIndex,
         last_offset: CodeOffset,
     ) -> Result<(), ExecutionError> {
+        // no need to set linkage context as session is only used to get native extensions
         let object_runtime: &mut ObjectRuntime = self.session.get_native_extensions().get_mut();
         let events = object_runtime.take_user_events();
         let num_events = self.user_events.len() + events.len();
@@ -200,14 +203,15 @@ where
         let new_events = events
             .into_iter()
             .map(|(tag, value)| {
+                // no need to set linkage context as it was already set in the caller (execute_move_call)
                 let layout = self
                     .session
-                    .get_type_layout(&TypeTag::Struct(Box::new(tag.clone())))?;
+                    .get_type_layout(&TypeTag::Struct(Box::new(tag.clone())))
+                    .map_err(|e| self.convert_vm_error(e))?;
                 let bytes = value.simple_serialize(&layout).unwrap();
                 Ok((module_id.clone(), tag, bytes))
             })
-            .collect::<Result<Vec<_>, VMError>>()
-            .map_err(|e| self.convert_vm_error(e))?;
+            .collect::<Result<Vec<_>, ExecutionError>>()?;
         self.user_events.extend(new_events);
         Ok(())
     }
@@ -585,13 +589,17 @@ where
             protocol_config,
         );
         for (id, (write_kind, recipient, ty, move_type, value)) in writes {
+            // TODO: set linkage context
             let abilities = tmp_session
                 .get_type_abilities(&ty)
                 .map_err(|e| convert_vm_error(e, vm, storage_context))?;
             let has_public_transfer = abilities.has_store();
+            self.storage_context
+                .set_context((*move_type.address()).into())?;
             let layout = tmp_session
                 .get_type_layout(&move_type.clone().into())
                 .map_err(|e| convert_vm_error(e, vm, storage_context))?;
+            self.storage_context.reset_context();
             let bytes = value.simple_serialize(&layout).unwrap();
             // safe because has_public_transfer has been determined by the abilities
             let move_object = unsafe {

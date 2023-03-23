@@ -11,7 +11,7 @@ use sui_types::{
     error::{ExecutionError, ExecutionErrorKind},
     move_package::MovePackage,
     object::Object,
-    storage::{BackingPackageStore, ChildObjectResolver},
+    storage::{BackingPackageStore, ChildObjectResolver, LinkageInitializer},
 };
 
 use move_core_types::{
@@ -21,12 +21,15 @@ use move_core_types::{
 };
 
 pub struct LinkageInfo {
+    pub pkg_id: ObjectID,
+    /// Move package may not always be available where linkage info is needed (e.g., when
+    /// publishing)
     pub running_pkg: Option<MovePackage>,
 }
 
 pub struct StorageContext<'a, E, S> {
     pub storage_view: &'a S,
-    linkage_info: RefCell<LinkageInfo>,
+    linkage_info: RefCell<Option<LinkageInfo>>,
     _p: PhantomData<E>,
 }
 
@@ -42,20 +45,28 @@ impl<
     pub fn new(storage_view: &'a S) -> Self {
         Self {
             storage_view,
-            linkage_info: RefCell::new(LinkageInfo { running_pkg: None }),
+            linkage_info: RefCell::new(None),
             _p: PhantomData,
         }
     }
 
-    pub fn set_context(&self, running_pkg: MovePackage) -> Result<(), ExecutionError> {
-        if self.linkage_info.borrow().running_pkg.is_some() {
+    pub fn set_context(&self, pkg_id: ObjectID) -> Result<(), ExecutionError> {
+        if self.linkage_info.borrow().is_some() {
             return Err(ExecutionErrorKind::VMInvariantViolation.into());
         }
-        self.linkage_info.replace(LinkageInfo {
-            running_pkg: Some(running_pkg),
-        });
+        let running_pkg = match self.storage_view.get_packages(&[pkg_id]).unwrap() {
+            Ok(v) => Some(v[0].clone()),
+            Err(_) => None,
+        };
+        self.linkage_info.replace(Some(LinkageInfo {
+            pkg_id,
+            running_pkg,
+        }));
         Ok(())
-        //Ok(self.linkage_info = Some(RefCell::new(LinkageInfo { running_pkg })))
+    }
+
+    pub fn reset_context(&self) {
+        self.linkage_info.replace(None);
     }
 }
 
@@ -89,13 +100,7 @@ impl<'a, E: fmt::Debug, S: StorageView<E>> LinkageResolver for StorageContext<'a
     type Error = E;
 
     fn link_context(&self) -> AccountAddress {
-        self.linkage_info
-            .borrow()
-            .running_pkg
-            .as_ref()
-            .unwrap()
-            .id()
-            .into()
+        self.linkage_info.borrow().as_ref().unwrap().pkg_id.into()
     }
 
     fn relocate(&self, module_id: &ModuleId) -> Result<ModuleId, Self::Error> {
@@ -111,5 +116,15 @@ impl<'a, E: fmt::Debug, S: StorageView<E>> LinkageResolver for StorageContext<'a
             .upgraded_id;
         Ok(ModuleId::new(new_id.into(), module_id.name().into()))
         */
+    }
+}
+
+impl<'a, E: fmt::Debug, S: StorageView<E>> LinkageInitializer for StorageContext<'a, E, S> {
+    fn set_context(&self, pkg_id: ObjectID) -> Result<(), ExecutionError> {
+        self.set_context(pkg_id)
+    }
+
+    fn reset_context(&self) {
+        self.reset_context();
     }
 }

@@ -8,7 +8,7 @@ use move_binary_format::CompiledModule;
 use move_bytecode_utils::module_cache::GetModule;
 use move_core_types::account_address::AccountAddress;
 use move_core_types::language_storage::{ModuleId, StructTag};
-use move_core_types::resolver::{LinkageResolver, ModuleResolver, ResourceResolver};
+use move_core_types::resolver::{ModuleResolver, ResourceResolver};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use sui_protocol_config::{ProtocolConfig, ProtocolVersion};

@@ -7,6 +7,7 @@ use crate::{
     committee::{Committee, EpochId, StakeUnit},
     messages::{CommandIndex, ExecutionFailureStatus, MoveLocation, MoveLocationOpt},
     object::Owner,
+    storage::LinkageInitializer,
 };
 use fastcrypto::error::FastCryptoError;
 use move_binary_format::{access::ModuleAccess, errors::VMError};
@@ -685,7 +686,10 @@ impl From<ExecutionErrorKind> for ExecutionError {
 pub fn convert_vm_error<
     'r,
     E: Debug,
-    S: ResourceResolver<Error = E> + ModuleResolver<Error = E> + LinkageResolver<Error = E>,
+    S: ResourceResolver<Error = E>
+        + ModuleResolver<Error = E>
+        + LinkageResolver<Error = E>
+        + LinkageInitializer,
 >(
     error: VMError,
     vm: &'r MoveVM,
@@ -712,11 +716,16 @@ pub fn convert_vm_error<
             let offset = error.offsets().first().copied().map(|(f, i)| (f.0, i));
             debug_assert!(offset.is_some(), "Move should set the location on aborts");
             let (function, instruction) = offset.unwrap_or((0, 0));
+            // TODO: these will set but also reset (caller's) linkage context
+            //            if let Err(err) = state_view.set_context((*id.address()).into()) {
+            //                return err;
+            //            }
             let function_name = vm.load_module(id, state_view).ok().map(|module| {
                 let fdef = module.function_def_at(FunctionDefinitionIndex(function));
                 let fhandle = module.function_handle_at(fdef.function);
                 module.identifier_at(fhandle.name).to_string()
             });
+            //            state_view.reset_context();
             ExecutionFailureStatus::MoveAbort(
                 MoveLocation {
                     module: id.clone(),
@@ -739,11 +748,16 @@ pub fn convert_vm_error<
                             "Move should set the location on all execution errors. Error {error}"
                         );
                         let (function, instruction) = offset.unwrap_or((0, 0));
+                        // TODO: these will set but also reset (caller's) linkage context
+                        //                        if let Err(err) = state_view.set_context((*id.address()).into()) {
+                        //                            return err;
+                        //                        }
                         let function_name = vm.load_module(id, state_view).ok().map(|module| {
                             let fdef = module.function_def_at(FunctionDefinitionIndex(function));
                             let fhandle = module.function_handle_at(fdef.function);
                             module.identifier_at(fhandle.name).to_string()
                         });
+                        //                        state_view.reset_context();
                         Some(MoveLocation {
                             module: id.clone(),
                             function,
