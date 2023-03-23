@@ -114,8 +114,14 @@ impl<'a, E: fmt::Debug, S: StorageView<E>> LinkageResolver for StorageContext<'a
             .as_ref()
         {
             Some(move_pkg) => {
-                let upgraded_id = move_pkg.linkage_table().get(&old_id).unwrap().upgraded_id;
-                ModuleId::new(upgraded_id.into(), module_id.name().into())
+                if move_pkg.id() == old_id {
+                    // a linker may issue a query for a module in the package represented by the
+                    // link context, in which case the result is going to be the same module
+                    module_id.clone()
+                } else {
+                    let upgraded_id = move_pkg.linkage_table().get(&old_id).unwrap().upgraded_id;
+                    ModuleId::new(upgraded_id.into(), module_id.name().into())
+                }
             }
             None => module_id.clone(),
         };
