@@ -159,6 +159,9 @@ pub struct AuthorityPerEpochStore {
 
     /// Execution state that has to restart at each epoch change
     execution_component: ExecutionComponents,
+
+    /// in memory cache of tables.submitting_authorities
+    submitting_authorities: Mutex<HashSet<AuthorityName>>,
 }
 
 /// AuthorityEpochTables contains tables that contain data that is only valid within an epoch.
@@ -279,6 +282,9 @@ pub struct AuthorityEpochTables {
     /// Record of the capabilities advertised by each authority.
     authority_capabilities: DBMap<AuthorityName, AuthorityCapabilities>,
 
+    /// Authorities from whom we have observed at least one consensus message
+    submitting_authorities: DBMap<AuthorityName, ()>,
+
     /// Contains a single key, which overrides the value of
     /// ProtocolConfig::buffer_stake_for_protocol_upgrade_bps
     override_protocol_upgrade_buffer_stake: DBMap<u64, u64>,
@@ -375,6 +381,12 @@ impl AuthorityPerEpochStore {
         let execution_component = ExecutionComponents::new(&protocol_config, store, cache_metrics);
         let signature_verifier =
             SignatureVerifier::new(committee.clone(), signature_verifier_metrics);
+
+        let submitting_authorities: HashSet<_> = tables.submitting_authorities.keys().collect();
+        metrics
+            .unique_submitting_validators
+            .set(submitting_authorities.len() as i64);
+
         let s = Arc::new(Self {
             committee,
             protocol_config,
@@ -395,6 +407,7 @@ impl AuthorityPerEpochStore {
             metrics,
             epoch_start_configuration,
             execution_component,
+            submitting_authorities: Mutex::new(submitting_authorities),
         });
         s.update_buffer_stake_metric();
         s
@@ -1451,6 +1464,28 @@ impl AuthorityPerEpochStore {
         }
     }
 
+    fn update_submitting_authorities(&self, authority: AuthorityName) {
+        let mut submitting_authorities = self.submitting_authorities.lock();
+
+        if submitting_authorities.insert(authority) {
+            // this table is only used for metrics right now, so no need to handle errors
+            self.tables
+                .submitting_authorities
+                .insert(&authority, &())
+                .tap_err(|e| {
+                    error!(
+                        "Error inserting authority into submitting_authorities table: {}",
+                        e
+                    )
+                })
+                .ok();
+        }
+
+        self.metrics
+            .unique_submitting_validators
+            .set(submitting_authorities.len() as i64);
+    }
+
     /// Verifies transaction signatures and other data
     /// Important: This function can potentially be called in parallel and you can not rely on order of transactions to perform verification
     /// If this function return an error, transaction is skipped and is not passed to handle_consensus_transaction
@@ -1461,6 +1496,9 @@ impl AuthorityPerEpochStore {
         skipped_consensus_txns: &IntCounter,
     ) -> Result<VerifiedSequencedConsensusTransaction, ()> {
         let _scope = monitored_scope("VerifyConsensusTransaction");
+
+        self.update_submitting_authorities(transaction.sender_authority());
+
         if self
             .is_consensus_message_processed(&transaction.transaction.key())
             .expect("Storage error")

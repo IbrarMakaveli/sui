@@ -79,6 +79,9 @@ pub struct EpochMetrics {
 
     /// Buffer stake current in effect for this epoch
     pub effective_buffer_stake: IntGauge,
+
+    /// Number of unique validators from whom we have received consensus messages
+    pub unique_submitting_validators: IntGauge,
 }
 
 impl EpochMetrics {
@@ -164,6 +167,11 @@ impl EpochMetrics {
             effective_buffer_stake: register_int_gauge_with_registry!(
                 "effective_buffer_stake",
                 "Buffer stake current in effect for this epoch",
+                registry,
+            ).unwrap(),
+            unique_submitting_validators: register_int_gauge_with_registry!(
+                "unique_submitting_validators",
+                "Number of unique validators from whom we have received consensus messages",
                 registry,
             ).unwrap(),
         };
