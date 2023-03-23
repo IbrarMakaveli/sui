@@ -104,18 +104,22 @@ impl<'a, E: fmt::Debug, S: StorageView<E>> LinkageResolver for StorageContext<'a
     }
 
     fn relocate(&self, module_id: &ModuleId) -> Result<ModuleId, Self::Error> {
-        Ok(module_id.clone())
-        /*
         let old_id: ObjectID = (*module_id.address()).into();
-        let new_id = self
+        let new_module_id = match self
             .linkage_info
-            .running_pkg
-            .linkage_table()
-            .get(&old_id)
+            .borrow()
+            .as_ref()
             .unwrap()
-            .upgraded_id;
-        Ok(ModuleId::new(new_id.into(), module_id.name().into()))
-        */
+            .running_pkg
+            .as_ref()
+        {
+            Some(move_pkg) => {
+                let upgraded_id = move_pkg.linkage_table().get(&old_id).unwrap().upgraded_id;
+                ModuleId::new(upgraded_id.into(), module_id.name().into())
+            }
+            None => module_id.clone(),
+        };
+        Ok(new_module_id)
     }
 }
 

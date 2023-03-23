@@ -812,6 +812,9 @@ fn publish_and_verify_modules<E: fmt::Debug, S: StorageView<E>>(
             bytes
         })
         .collect();
+    // TODO: The VM needs linkage info when publishing but what context should we use? Fpr now we
+    // pass unpublished package ID but this means that the linkage info will not get fully
+    // initialized (as we can't retrieve MovePackage for this ID yet...)
     context.storage_context.set_context(package_id)?;
     context
         .session
