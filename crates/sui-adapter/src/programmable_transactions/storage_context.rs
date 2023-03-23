@@ -54,12 +54,12 @@ impl<
         if self.linkage_info.borrow().is_some() {
             return Err(ExecutionErrorKind::VMInvariantViolation.into());
         }
-        let running_pkg = match self.storage_view.get_packages(&[pkg_id]).unwrap() {
-            Ok(v) => Some(v[0].clone()),
-            Err(_) => None,
+        let (id, running_pkg) = match self.storage_view.get_packages(&[pkg_id]).unwrap() {
+            Ok(v) => (v[0].id(), Some(v[0].clone())),
+            Err(_) => (pkg_id, None),
         };
         self.linkage_info.replace(Some(LinkageInfo {
-            pkg_id,
+            pkg_id: id,
             running_pkg,
         }));
         Ok(())

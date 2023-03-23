@@ -11,7 +11,11 @@ use move_binary_format::{
     errors::{Location, VMError},
     file_format::{CodeOffset, FunctionDefinitionIndex, TypeParameterIndex},
 };
-use move_core_types::language_storage::{ModuleId, StructTag, TypeTag};
+use move_core_types::{
+    account_address::AccountAddress,
+    identifier::Identifier,
+    language_storage::{ModuleId, StructTag, TypeTag},
+};
 use move_vm_runtime::{move_vm::MoveVM, session::Session};
 use sui_framework::natives::object_runtime::{max_event_error, ObjectRuntime, RuntimeResults};
 use sui_protocol_config::ProtocolConfig;
@@ -25,6 +29,7 @@ use sui_types::{
     move_package::MovePackage,
     object::{MoveObject, Object, Owner, OBJECT_START_VERSION},
     storage::{ObjectChange, Storage, WriteKind},
+    SUI_FRAMEWORK_ADDRESS,
 };
 
 use crate::{
@@ -589,13 +594,13 @@ where
             protocol_config,
         );
         for (id, (write_kind, recipient, ty, move_type, value)) in writes {
-            // TODO: set linkage context
+            // TODO: set linkage context?
             let abilities = tmp_session
                 .get_type_abilities(&ty)
                 .map_err(|e| convert_vm_error(e, vm, storage_context))?;
             let has_public_transfer = abilities.has_store();
             self.storage_context
-                .set_context((*move_type.address()).into())?;
+                .set_context((move_type_address(&move_type)).into())?;
             let layout = tmp_session
                 .get_type_layout(&move_type.clone().into())
                 .map_err(|e| convert_vm_error(e, vm, storage_context))?;
@@ -732,6 +737,28 @@ where
             result_value.last_usage_kind = Some(usage);
         }
         Ok((metadata, &mut result_value.value))
+    }
+}
+
+fn struct_type_address(s: &StructTag) -> AccountAddress {
+    let addr = s.address;
+    if addr == SUI_FRAMEWORK_ADDRESS
+        && s.module == Identifier::new("dynamic_field").unwrap()
+        && s.name == Identifier::new("Field").unwrap()
+    {
+        if let TypeTag::Struct(inner) = &s.type_params[1] {
+            return inner.address;
+        }
+    }
+    addr
+}
+
+fn move_type_address(o: &MoveObjectType) -> AccountAddress {
+    match o {
+        MoveObjectType::GasCoin | MoveObjectType::StakedSui | MoveObjectType::Coin(_) => {
+            SUI_FRAMEWORK_ADDRESS
+        }
+        MoveObjectType::Other(s) => struct_type_address(s),
     }
 }
 
