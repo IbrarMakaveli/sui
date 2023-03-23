@@ -697,7 +697,13 @@ impl<T: ObjectStore> ObjectStore for Arc<T> {
 /// Initialize linkage information. The input is the ID of a package containing a function used as
 /// an entry point to programmable transaction's Move call command.
 pub trait LinkageInitializer {
+    /// Sets linkage contexts (makes it available to the linker)
     fn set_context(&self, id: ObjectID) -> Result<(), ExecutionError>;
 
+    /// Resets linkage contexts (makes it unavailable to the linker)
     fn reset_context(&self);
+
+    /// Replaces linkage context but use sparingly as set_context/reset_context offers more
+    /// protection from undesirable linkage context changes
+    fn replace_context(&self, pkg_id: ObjectID) -> Option<ObjectID>;
 }

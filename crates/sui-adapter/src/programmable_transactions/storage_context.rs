@@ -68,6 +68,19 @@ impl<
     pub fn reset_context(&self) {
         self.linkage_info.replace(None);
     }
+
+    pub fn replace_context(&self, pkg_id: ObjectID) -> Option<ObjectID> {
+        let old_id = self
+            .linkage_info
+            .borrow()
+            .as_ref()
+            .map(|linkage| linkage.pkg_id);
+        if old_id.is_some() {
+            self.reset_context();
+        }
+        _ = self.set_context(pkg_id); // cannot fail
+        old_id
+    }
 }
 
 impl<'a, E: fmt::Debug, S: StorageView<E>> ChildObjectResolver for StorageContext<'a, E, S> {
@@ -130,11 +143,19 @@ impl<'a, E: fmt::Debug, S: StorageView<E>> LinkageResolver for StorageContext<'a
 }
 
 impl<'a, E: fmt::Debug, S: StorageView<E>> LinkageInitializer for StorageContext<'a, E, S> {
+    /// Sets linkage contexts (makes it available to the linker)
     fn set_context(&self, pkg_id: ObjectID) -> Result<(), ExecutionError> {
         self.set_context(pkg_id)
     }
 
+    /// Resets linkage contexts (makes it unavailable to the linker)
     fn reset_context(&self) {
         self.reset_context();
+    }
+
+    /// Replaces linkage context but use sparingly as set_context/reset_context offers more
+    /// protection from undesirable linkage context changes
+    fn replace_context(&self, pkg_id: ObjectID) -> Option<ObjectID> {
+        self.replace_context(pkg_id)
     }
 }
