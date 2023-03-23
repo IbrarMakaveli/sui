@@ -120,7 +120,7 @@ module sui::kiosk {
     struct Listing has store, copy, drop { id: ID, is_exclusive: bool }
 
     /// Dynamic field key for a `Lock` - mechanic that does not allow items
-    /// of a type leave the `Kiosk` ever unless the lock is disabled by the
+    /// of a type to leave the `Kiosk` ever unless the lock is disabled by the
     /// creator of the item.
     struct KioskLock<phantom T: key + store> has store, copy, drop {}
 
