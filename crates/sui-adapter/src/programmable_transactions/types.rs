@@ -7,7 +7,7 @@ use move_binary_format::file_format::AbilitySet;
 use move_core_types::{
     identifier::IdentStr,
     language_storage::{ModuleId, StructTag},
-    resolver::{LinkageResolver, ModuleResolver, ResourceResolver},
+    resolver::{ModuleResolver, ResourceResolver},
 };
 use move_vm_types::loaded_data::runtime_types::Type;
 use serde::Deserialize;
@@ -23,7 +23,6 @@ use sui_types::{
 pub trait StorageView<E: std::fmt::Debug>:
     ResourceResolver<Error = E>
     + ModuleResolver<Error = E>
-    + LinkageResolver<Error = E>
     + BackingPackageStore
     + Storage
     + ParentSync
@@ -34,7 +33,6 @@ impl<
         E: std::fmt::Debug,
         T: ResourceResolver<Error = E>
             + ModuleResolver<Error = E>
-            + LinkageResolver<Error = E>
             + BackingPackageStore
             + Storage
             + ParentSync

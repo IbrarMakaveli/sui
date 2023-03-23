@@ -12,13 +12,8 @@ use move_binary_format::{
     file_format::{CodeOffset, FunctionDefinitionIndex, TypeParameterIndex},
 };
 use move_core_types::language_storage::{ModuleId, StructTag, TypeTag};
-use move_vm_runtime::{
-    move_vm::MoveVM, native_extensions::NativeContextExtensions, session::Session,
-};
-use sui_framework::natives::{
-    object_runtime::{max_event_error, ObjectRuntime, RuntimeResults},
-    NativesCostTable,
-};
+use move_vm_runtime::{move_vm::MoveVM, session::Session};
+use sui_framework::natives::object_runtime::{max_event_error, ObjectRuntime, RuntimeResults};
 use sui_protocol_config::ProtocolConfig;
 use sui_types::{
     balance::Balance,
@@ -54,8 +49,7 @@ pub struct ExecutionContext<'vm, 'state, 'a, 'b, E: fmt::Debug, S: StorageView<E
     /// The gas status used for metering
     pub gas_status: &'a mut SuiGasStatus<'b>,
     /// The session used for interacting with Move types and calls
-    pub session: Session<'state, 'vm, S>,
-    pub extensions: Option<NativeContextExtensions<'state>>,
+    pub session: Session<'state, 'vm, StorageContext<'state, E, S>>,
     /// Additional transfers not from the Move runtime
     additional_transfers: Vec<(/* new owner */ SuiAddress, ObjectValue)>,
     /// Newly published packages
@@ -144,19 +138,11 @@ where
         };
         let session = new_session(
             vm,
-            storage_context.storage_view,
+            storage_context,
             object_owner_map.clone(),
             !gas_status.is_unmetered(),
             protocol_config,
         );
-        let mut extensions = NativeContextExtensions::default();
-        extensions.add(ObjectRuntime::new(
-            Box::new(state_view),
-            object_owner_map,
-            !gas_status.is_unmetered(),
-            protocol_config,
-        ));
-        extensions.add(NativesCostTable::from_protocol_config(protocol_config));
         Ok(Self {
             protocol_config,
             vm,
@@ -164,7 +150,6 @@ where
             tx_context,
             gas_status,
             session,
-            extensions: Some(extensions),
             gas,
             inputs,
             results: vec![],
@@ -524,7 +509,7 @@ where
 
         let (change_set, events, mut native_context_extensions) = session
             .finish_with_extensions()
-            .map_err(|e| convert_vm_error(e, vm, storage_context.storage_view))?;
+            .map_err(|e| convert_vm_error(e, vm, storage_context))?;
         // Sui Move programs should never touch global state, so resources should be empty
         assert_invariant!(
             change_set.resources().next().is_none(),
@@ -602,11 +587,11 @@ where
         for (id, (write_kind, recipient, ty, move_type, value)) in writes {
             let abilities = tmp_session
                 .get_type_abilities(&ty)
-                .map_err(|e| convert_vm_error(e, vm, storage_context.storage_view))?;
+                .map_err(|e| convert_vm_error(e, vm, storage_context))?;
             let has_public_transfer = abilities.has_store();
             let layout = tmp_session
                 .get_type_layout(&move_type.clone().into())
-                .map_err(|e| convert_vm_error(e, vm, storage_context.storage_view))?;
+                .map_err(|e| convert_vm_error(e, vm, storage_context))?;
             let bytes = value.simple_serialize(&layout).unwrap();
             // safe because has_public_transfer has been determined by the abilities
             let move_object = unsafe {
@@ -640,7 +625,7 @@ where
         }
         let (change_set, move_events) = tmp_session
             .finish()
-            .map_err(|e| convert_vm_error(e, vm, storage_context.storage_view))?;
+            .map_err(|e| convert_vm_error(e, vm, storage_context))?;
         // the session was just used for ability and layout metadata fetching, no changes should
         // exist. Plus, Sui Move does not use these changes or events
         assert_invariant!(change_set.accounts().is_empty(), "Change set must be empty");
@@ -654,7 +639,7 @@ where
 
     /// Convert a VM Error to an execution one
     pub fn convert_vm_error(&self, error: VMError) -> ExecutionError {
-        sui_types::error::convert_vm_error(error, self.vm, self.storage_context.storage_view)
+        sui_types::error::convert_vm_error(error, self.vm, self.storage_context)
     }
 
     /// Special case errors for type arguments to Move functions

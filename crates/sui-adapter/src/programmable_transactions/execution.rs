@@ -52,7 +52,7 @@ use sui_verifier::{
 };
 
 use crate::{
-    adapter::{generate_package_id, new_session_with_extensions, substitute_package_id},
+    adapter::{generate_package_id, substitute_package_id},
     execution_mode::ExecutionMode,
 };
 
@@ -628,7 +628,7 @@ fn fetch_package<'a, E: fmt::Debug, S: StorageView<E>>(
     context: &'a ExecutionContext<E, S>,
     package_id: &ObjectID,
 ) -> Result<MovePackage, ExecutionError> {
-    let mut fetched_packages = fetch_packages(context, &vec![*package_id])?;
+    let mut fetched_packages = fetch_packages(context, &[*package_id])?;
     assert_invariant!(
         fetched_packages.len() == 1,
         "Number of fetched packages must match the number of package object IDs if successful."
@@ -691,16 +691,8 @@ fn vm_move_call<E: fmt::Debug, S: StorageView<E>>(
         }
     }
 
-    let extensions = context.extensions.take().unwrap();
-    let mut new_extensions = None;
-    {
-        let pkg = fetch_package(context, &ObjectID::from_address(*module_id.address())).unwrap();
-        context.storage_context.set_context(pkg).unwrap();
-        let session = new_session_with_extensions(context.vm, context.storage_context, extensions);
-        let (_, _, session_extensions) = session.finish_with_extensions().unwrap();
-        new_extensions = Some(session_extensions);
-    }
-    context.extensions = new_extensions;
+    let pkg = fetch_package(context, &ObjectID::from_address(*module_id.address())).unwrap();
+    context.storage_context.set_context(pkg).unwrap();
 
     // script visibility checked manually for entry points
     let mut result = context
@@ -881,7 +873,7 @@ fn check_visibility_and_signature<E: fmt::Debug, S: StorageView<E>, Mode: Execut
     }
     let module = context
         .vm
-        .load_module(module_id, context.storage_context.storage_view)
+        .load_module(module_id, context.storage_context)
         .map_err(|e| context.convert_vm_error(e))?;
     let Some((index, fdef)) = module.function_defs.iter().enumerate().find(|(_index, fdef)| {
         module.identifier_at(module.function_handle_at(fdef.function).name) == function

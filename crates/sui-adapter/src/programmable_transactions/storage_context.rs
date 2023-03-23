@@ -11,7 +11,7 @@ use sui_types::{
     error::{ExecutionError, ExecutionErrorKind},
     move_package::MovePackage,
     object::Object,
-    storage::ChildObjectResolver,
+    storage::{BackingPackageStore, ChildObjectResolver},
 };
 
 use move_core_types::{
@@ -30,7 +30,15 @@ pub struct StorageContext<'a, E, S> {
     _p: PhantomData<E>,
 }
 
-impl<'a, E, S> StorageContext<'a, E, S> {
+impl<
+        'a,
+        E,
+        S: ResourceResolver<Error = E>
+            + ModuleResolver<Error = E>
+            + BackingPackageStore
+            + ChildObjectResolver,
+    > StorageContext<'a, E, S>
+{
     pub fn new(storage_view: &'a S) -> Self {
         Self {
             storage_view,

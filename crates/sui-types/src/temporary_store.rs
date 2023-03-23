@@ -1011,11 +1011,6 @@ impl<S: BackingPackageStore> BackingPackageStore for TemporaryStore<S> {
     }
 }
 
-/// TODO: Proper implementation of re-linking (currently the default implementation does nothing).
-impl<S> LinkageResolver for TemporaryStore<S> {
-    type Error = SuiError;
-}
-
 impl<S: BackingPackageStore> ModuleResolver for TemporaryStore<S> {
     type Error = SuiError;
     fn get_module(&self, module_id: &ModuleId) -> Result<Option<Vec<u8>>, Self::Error> {
