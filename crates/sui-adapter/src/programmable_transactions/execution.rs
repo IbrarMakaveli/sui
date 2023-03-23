@@ -694,6 +694,8 @@ fn vm_move_call<E: fmt::Debug, S: StorageView<E>>(
     let extensions = context.extensions.take().unwrap();
     let mut new_extensions = None;
     {
+        let pkg = fetch_package(context, &ObjectID::from_address(*module_id.address())).unwrap();
+        context.storage_context.set_context(pkg).unwrap();
         let session = new_session_with_extensions(context.vm, context.storage_context, extensions);
         let (_, _, session_extensions) = session.finish_with_extensions().unwrap();
         new_extensions = Some(session_extensions);

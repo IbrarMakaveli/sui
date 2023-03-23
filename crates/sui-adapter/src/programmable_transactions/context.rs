@@ -47,7 +47,7 @@ pub struct ExecutionContext<'vm, 'state, 'a, 'b, E: fmt::Debug, S: StorageView<E
     /// The MoveVM
     pub vm: &'vm MoveVM,
     /// The global state, used for resolving packages
-    pub storage_context: &'state mut StorageContext<'state, E, S>,
+    pub storage_context: &'state StorageContext<'state, E, S>,
     /// A shared transaction context, contains transaction digest information and manages the
     /// creation of new object IDs
     pub tx_context: &'a mut TxContext,

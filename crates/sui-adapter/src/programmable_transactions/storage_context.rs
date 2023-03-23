@@ -1,7 +1,7 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-use std::{fmt, marker::PhantomData};
+use std::{cell::RefCell, fmt, marker::PhantomData};
 
 use crate::programmable_transactions::types::StorageView;
 
@@ -21,12 +21,12 @@ use move_core_types::{
 };
 
 pub struct LinkageInfo {
-    pub running_pkg: MovePackage,
+    pub running_pkg: Option<MovePackage>,
 }
 
 pub struct StorageContext<'a, E, S> {
     pub storage_view: &'a S,
-    linkage_info: Option<LinkageInfo>,
+    linkage_info: RefCell<LinkageInfo>,
     _p: PhantomData<E>,
 }
 
@@ -34,16 +34,20 @@ impl<'a, E, S> StorageContext<'a, E, S> {
     pub fn new(storage_view: &'a S) -> Self {
         Self {
             storage_view,
-            linkage_info: None,
+            linkage_info: RefCell::new(LinkageInfo { running_pkg: None }),
             _p: PhantomData,
         }
     }
 
-    pub fn set_context(&mut self, running_pkg: MovePackage) -> Result<(), ExecutionError> {
-        if self.linkage_info.is_some() {
+    pub fn set_context(&self, running_pkg: MovePackage) -> Result<(), ExecutionError> {
+        if self.linkage_info.borrow().running_pkg.is_some() {
             return Err(ExecutionErrorKind::VMInvariantViolation.into());
         }
-        Ok(self.linkage_info = Some(LinkageInfo { running_pkg }))
+        self.linkage_info.replace(LinkageInfo {
+            running_pkg: Some(running_pkg),
+        });
+        Ok(())
+        //Ok(self.linkage_info = Some(RefCell::new(LinkageInfo { running_pkg })))
     }
 }
 
@@ -77,7 +81,13 @@ impl<'a, E: fmt::Debug, S: StorageView<E>> LinkageResolver for StorageContext<'a
     type Error = E;
 
     fn link_context(&self) -> AccountAddress {
-        self.linkage_info.as_ref().unwrap().running_pkg.id().into()
+        self.linkage_info
+            .borrow()
+            .running_pkg
+            .as_ref()
+            .unwrap()
+            .id()
+            .into()
     }
 
     fn relocate(&self, module_id: &ModuleId) -> Result<ModuleId, Self::Error> {
