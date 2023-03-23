@@ -48,7 +48,9 @@ export function CheckpointsTable({
             rpc.getCheckpoints({
                 limit: itemsPerPage,
                 descendingOrder: true,
-                cursor: countQuery.data! - currentPage - 1 * itemsPerPage,
+                cursor: String(
+                    Number(countQuery.data!) - currentPage - 1 * itemsPerPage
+                ),
             }),
         { enabled: countQuery.isFetched, keepPreviousData: true }
     );
@@ -115,7 +117,7 @@ export function CheckpointsTable({
     );
 
     const stats = {
-        count: countQuery.data || 0,
+        count: Number(countQuery.data) || 0,
         stats_text: 'Total Checkpoints',
         loadState: statusToLoadState[countQuery.status],
     };
@@ -128,7 +130,7 @@ export function CheckpointsTable({
             />
             {paginationType === 'pagination' ? (
                 <Pagination
-                    totalItems={countQuery.data || 0}
+                    totalItems={Number(countQuery.data) || 0}
                     itemsPerPage={itemsPerPage}
                     updateItemsPerPage={setItemsPerPage}
                     onPagiChangeFn={(newPage) => setCurrentPage(newPage)}

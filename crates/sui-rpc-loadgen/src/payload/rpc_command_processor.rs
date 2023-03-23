@@ -7,7 +7,7 @@ use futures::future::join_all;
 use shared_crypto::intent::{Intent, IntentMessage};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use sui_json_rpc_types::{CheckpointId, SuiTransactionResponseOptions};
+use sui_json_rpc_types::{BigInt, CheckpointId, SuiTransactionResponseOptions};
 use tokio::sync::RwLock;
 use tokio::time::sleep;
 use tracing::log::warn;
@@ -147,10 +147,10 @@ impl<'a> ProcessPayload<'a, &'a GetCheckpoints> for RpcCommandProcessor {
                         let start_time = Instant::now();
                         let checkpoint = match client
                             .read_api()
-                            .get_checkpoint(CheckpointId::SequenceNumber(seq))
+                            .get_checkpoint(CheckpointId::SequenceNumber(<BigInt>::from(seq)))
                             .await {
                             Ok(t) => {
-                                if t.sequence_number != seq {
+                                if <u64>::from(t.sequence_number) != seq {
                                     error!("The RPC server corresponding to the {i}th url has unexpected checkpoint sequence number {}, expected {seq}", t.sequence_number,);
                                 }
                                 Some(t)
