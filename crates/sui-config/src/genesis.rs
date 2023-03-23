@@ -677,11 +677,6 @@ impl Builder {
             CertifiedCheckpointSummary::new(checkpoint, signatures, &committee).unwrap()
         };
 
-        let validators = self.validators.into_values().collect::<Vec<_>>();
-
-        // Ensure we have signatures from all validators
-        assert_eq!(checkpoint.auth_sig().len(), validators.len() as u64);
-
         let genesis = Genesis {
             checkpoint,
             checkpoint_contents,
@@ -691,22 +686,35 @@ impl Builder {
             objects,
         };
 
-        // Verify that all the validators were properly created onchain
-        let system_object = genesis
-            .sui_system_object()
-            .into_genesis_version_for_tooling();
-        assert_eq!(system_object.epoch(), 0);
+        self.verify_genesis(genesis)
+    }
 
-        for (validator, onchain_validator) in validators
-            .iter()
-            .map(|genesis_info| &genesis_info.info)
-            .zip(system_object.validators.active_validators)
-        {
-            let metadata = onchain_validator.verified_metadata();
-            assert_eq!(validator.sui_address(), metadata.sui_address);
-            assert_eq!(validator.protocol_key(), metadata.sui_pubkey_bytes());
-            assert_eq!(validator.name(), &metadata.name);
-            assert_eq!(validator.network_address(), &metadata.net_address);
+    fn verify_genesis(self, genesis: Genesis) -> Genesis {
+        let validators = self.validators.into_values().collect::<Vec<_>>();
+
+        // Ensure we have signatures from all validators
+        assert_eq!(genesis.checkpoint.auth_sig().len(), validators.len() as u64);
+
+        match genesis.sui_system_object() {
+            // Only need strong verification for the real prod genesis.
+            SuiSystemState::V1(system_state) => {
+                // Verify that all the validators were properly created onchain
+                assert_eq!(system_state.epoch, 0);
+
+                for (validator, onchain_validator) in validators
+                    .iter()
+                    .map(|genesis_info| &genesis_info.info)
+                    .zip(system_state.validators.active_validators)
+                {
+                    let metadata = onchain_validator.verified_metadata();
+                    assert_eq!(validator.sui_address(), metadata.sui_address);
+                    assert_eq!(validator.protocol_key(), metadata.sui_pubkey_bytes());
+                    assert_eq!(validator.name(), &metadata.name);
+                    assert_eq!(validator.network_address(), &metadata.net_address);
+                }
+            }
+            #[cfg(msim)]
+            _ => (),
         }
 
         genesis
