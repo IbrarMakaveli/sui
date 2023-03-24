@@ -114,6 +114,9 @@ struct FeatureFlags {
     // Add feature flags here, e.g.:
     // new_protocol_feature: bool,
     package_upgrades: bool,
+    // If true, validators will commit to the root state digest
+    // in end of epoch checkpoint proposals
+    commit_root_state_digest: bool,
 }
 
 /// Constants that change the behavior of the protocol.
@@ -470,6 +473,17 @@ impl ProtocolConfig {
         } else {
             Err(Error(format!(
                 "package upgrades are not supported at {:?}",
+                self.version
+            )))
+        }
+    }
+
+    pub fn check_commit_root_state_digest_supported(&self) -> Result<(), Error> {
+        if self.feature_flags.package_upgrades {
+            Ok(())
+        } else {
+            Err(Error(format!(
+                "Committing the root state digest is not supported at {:?}",
                 self.version
             )))
         }
