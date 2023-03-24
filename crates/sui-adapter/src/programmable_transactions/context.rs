@@ -11,13 +11,14 @@ use move_binary_format::{
     errors::{Location, VMError},
     file_format::{CodeOffset, FunctionDefinitionIndex, TypeParameterIndex},
 };
-use move_core_types::{
-    account_address::AccountAddress,
-    identifier::Identifier,
-    language_storage::{ModuleId, StructTag, TypeTag},
+use move_core_types::language_storage::{ModuleId, StructTag, TypeTag};
+use move_vm_runtime::{
+    move_vm::MoveVM, native_extensions::NativeContextExtensions, session::Session,
 };
-use move_vm_runtime::{move_vm::MoveVM, session::Session};
-use sui_framework::natives::object_runtime::{max_event_error, ObjectRuntime, RuntimeResults};
+use sui_framework::natives::{
+    object_runtime::{max_event_error, ObjectRuntime, RuntimeResults},
+    NativesCostTable,
+};
 use sui_protocol_config::ProtocolConfig;
 use sui_types::{
     balance::Balance,
@@ -26,14 +27,13 @@ use sui_types::{
     error::{ExecutionError, ExecutionErrorKind},
     gas::SuiGasStatus,
     messages::{Argument, CallArg, CommandArgumentError, ObjectArg},
-    move_package::MovePackage,
+    move_package::{MovePackage, UpgradeInfo},
     object::{MoveObject, Object, Owner, OBJECT_START_VERSION},
     storage::{ObjectChange, Storage, WriteKind},
-    SUI_FRAMEWORK_ADDRESS,
 };
 
 use crate::{
-    adapter::{missing_unwrapped_msg, new_session},
+    adapter::{missing_unwrapped_msg, new_session, new_session_with_extensions},
     execution_mode::ExecutionMode,
     programmable_transactions::storage_context::StorageContext,
 };
@@ -53,8 +53,8 @@ pub struct ExecutionContext<'vm, 'state, 'a, 'b, E: fmt::Debug, S: StorageView<E
     pub tx_context: &'a mut TxContext,
     /// The gas status used for metering
     pub gas_status: &'a mut SuiGasStatus<'b>,
-    /// The session used for interacting with Move types and calls
-    pub session: Session<'state, 'vm, StorageContext<'state, E, S>>,
+    /// The native extensions to create a session  used for interacting with Move types and calls
+    pub extensions: Option<NativeContextExtensions<'state>>,
     /// Additional transfers not from the Move runtime
     additional_transfers: Vec<(/* new owner */ SuiAddress, ObjectValue)>,
     /// Newly published packages
@@ -141,20 +141,21 @@ where
                 },
             }
         };
-        let session = new_session(
-            vm,
-            storage_context,
-            object_owner_map.clone(),
+        let mut extensions = NativeContextExtensions::default();
+        extensions.add(ObjectRuntime::new(
+            Box::new(state_view),
+            object_owner_map,
             !gas_status.is_unmetered(),
             protocol_config,
-        );
+        ));
+        extensions.add(NativesCostTable::from_protocol_config(protocol_config));
         Ok(Self {
             protocol_config,
             vm,
             storage_context,
             tx_context,
             gas_status,
-            session,
+            extensions: Some(extensions),
             gas,
             inputs,
             results: vec![],
@@ -167,10 +168,13 @@ where
     }
 
     /// Create a new ID and update the state
-    pub fn fresh_id(&mut self) -> Result<ObjectID, ExecutionError> {
+    pub fn fresh_id(
+        &mut self,
+        session: &mut Session<'state, 'vm, StorageContext<'state, E, S>>,
+    ) -> Result<ObjectID, ExecutionError> {
         let object_id = self.tx_context.fresh_id();
         // no need to set linkage context as session is only used to get native extensions
-        let object_runtime: &mut ObjectRuntime = self.session.get_native_extensions().get_mut();
+        let object_runtime: &mut ObjectRuntime = session.get_native_extensions().get_mut();
         object_runtime
             .new_id(object_id)
             .map_err(|e| self.convert_vm_error(e.finish(Location::Undefined)))?;
@@ -178,9 +182,14 @@ where
     }
 
     /// Delete an ID and update the state
-    pub fn delete_id(&mut self, object_id: ObjectID) -> Result<(), ExecutionError> {
+    pub fn delete_id(
+        &mut self,
+        session: &mut Session<'state, 'vm, StorageContext<'state, E, S>>,
+
+        object_id: ObjectID,
+    ) -> Result<(), ExecutionError> {
         // no need to set linkage context as session is only used to get native extensions
-        let object_runtime: &mut ObjectRuntime = self.session.get_native_extensions().get_mut();
+        let object_runtime: &mut ObjectRuntime = session.get_native_extensions().get_mut();
         object_runtime
             .delete_id(object_id)
             .map_err(|e| self.convert_vm_error(e.finish(Location::Undefined)))
@@ -190,12 +199,12 @@ where
     /// that was invoked for the command
     pub fn take_user_events(
         &mut self,
+        session: &mut Session<StorageContext<E, S>>,
         module_id: &ModuleId,
         function: FunctionDefinitionIndex,
         last_offset: CodeOffset,
     ) -> Result<(), ExecutionError> {
-        // no need to set linkage context as session is only used to get native extensions
-        let object_runtime: &mut ObjectRuntime = self.session.get_native_extensions().get_mut();
+        let object_runtime: &mut ObjectRuntime = session.get_native_extensions().get_mut();
         let events = object_runtime.take_user_events();
         let num_events = self.user_events.len() + events.len();
         let max_events = self.protocol_config.max_num_event_emit();
@@ -208,9 +217,7 @@ where
         let new_events = events
             .into_iter()
             .map(|(tag, value)| {
-                // no need to set linkage context as it was already set in the caller (execute_move_call)
-                let layout = self
-                    .session
+                let layout = session
                     .get_type_layout(&TypeTag::Struct(Box::new(tag.clone())))
                     .map_err(|e| self.convert_vm_error(e))?;
                 let bytes = value.simple_serialize(&layout).unwrap();
@@ -423,7 +430,7 @@ where
             storage_context,
             tx_context,
             gas_status,
-            session,
+            mut extensions,
             additional_transfers,
             new_packages,
             gas,
@@ -516,16 +523,8 @@ where
             refund_max_gas_budget(&mut additional_writes, gas_status, gas_id)?;
         }
 
-        let (change_set, events, mut native_context_extensions) = session
-            .finish_with_extensions()
-            .map_err(|e| convert_vm_error(e, vm, storage_context))?;
-        // Sui Move programs should never touch global state, so resources should be empty
-        assert_invariant!(
-            change_set.resources().next().is_none(),
-            "Change set must be empty"
-        );
-        // Sui Move no longer uses Move's internal event system
-        assert_invariant!(events.is_empty(), "Events must be empty");
+        let mut native_context_extensions = extensions.take().unwrap();
+
         let object_runtime: ObjectRuntime = native_context_extensions.remove();
         let new_ids = object_runtime.new_ids().clone();
         // tell the object runtime what input objects were taken and which were transferred
@@ -594,17 +593,14 @@ where
             protocol_config,
         );
         for (id, (write_kind, recipient, ty, move_type, value)) in writes {
-            // TODO: set linkage context?
             let abilities = tmp_session
                 .get_type_abilities(&ty)
                 .map_err(|e| convert_vm_error(e, vm, storage_context))?;
             let has_public_transfer = abilities.has_store();
-            self.storage_context
-                .compute_context((move_type_address(&move_type)).into())?;
+            // does not need linkage context
             let layout = tmp_session
                 .get_type_layout(&move_type.clone().into())
                 .map_err(|e| convert_vm_error(e, vm, storage_context))?;
-            self.storage_context.reset_context();
             let bytes = value.simple_serialize(&layout).unwrap();
             // safe because has_public_transfer has been determined by the abilities
             let move_object = unsafe {
@@ -738,27 +734,42 @@ where
         }
         Ok((metadata, &mut result_value.value))
     }
-}
 
-fn struct_type_address(s: &StructTag) -> AccountAddress {
-    let addr = s.address;
-    if addr == SUI_FRAMEWORK_ADDRESS
-        && s.module == Identifier::new("dynamic_field").unwrap()
-        && s.name == Identifier::new("Field").unwrap()
-    {
-        if let TypeTag::Struct(inner) = &s.type_params[1] {
-            return inner.address;
+    pub fn create_session_with_linkage_context(
+        &mut self,
+        pkg_id: ObjectID,
+        linkage_table: Option<BTreeMap<ObjectID, UpgradeInfo>>,
+    ) -> Result<Session<'state, 'vm, StorageContext<'state, E, S>>, ExecutionError> {
+        if let Some(table) = linkage_table {
+            self.storage_context.set_context(pkg_id, table)?;
+        } else {
+            self.storage_context.compute_context(pkg_id)?;
         }
+        Ok(self.create_session())
     }
-    addr
-}
 
-fn move_type_address(o: &MoveObjectType) -> AccountAddress {
-    match o {
-        MoveObjectType::GasCoin | MoveObjectType::StakedSui | MoveObjectType::Coin(_) => {
-            SUI_FRAMEWORK_ADDRESS
-        }
-        MoveObjectType::Other(s) => struct_type_address(s),
+    pub fn create_session(&mut self) -> Session<'state, 'vm, StorageContext<'state, E, S>> {
+        let extensions = self.extensions.take().unwrap();
+        new_session_with_extensions(self.vm, self.storage_context, extensions)
+    }
+
+    pub fn finish_session(
+        &mut self,
+        session: Session<'state, 'vm, StorageContext<'state, E, S>>,
+    ) -> Result<(), ExecutionError> {
+        let (change_set, events, extensions) = session
+            .finish_with_extensions()
+            .map_err(|e| self.convert_vm_error(e))?;
+        // Sui Move programs should never touch global state, so resources should be empty
+        assert_invariant!(
+            change_set.resources().next().is_none(),
+            "Change set must be empty"
+        );
+        // Sui Move no longer uses Move's internal event system
+        assert_invariant!(events.is_empty(), "Events must be empty");
+        self.extensions.replace(extensions);
+        self.storage_context.reset_context();
+        Ok(())
     }
 }
 
