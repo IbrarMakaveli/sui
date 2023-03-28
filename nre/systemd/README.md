@@ -9,12 +9,10 @@ Tested using:
 1. Add a `sui` user and the `/opt/sui` directories
 
 ```shell
-sudo useradd sui
 sudo mkdir -p /opt/sui/bin
 sudo mkdir -p /opt/sui/config
 sudo mkdir -p /opt/sui/db
 sudo mkdir -p /opt/sui/key-pairs
-sudo chown -R sui:sui /opt/sui
 ```
 
 2. Install the Sui Node (sui-node) binary, two options:
